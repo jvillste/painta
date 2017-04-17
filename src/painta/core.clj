@@ -144,19 +144,43 @@
 #_(def target-buffered-image (buffered-image/create-from-file #_"pumpkin.png" "/Users/jukka/Pictures/how-to-draw-a-dragon-from-skyrim-step-9_1_000000153036_5.gif"))
 
 #_(def target-buffered-image
-  (let [original-image (ImageIO/read (File. "/Users/jukka/Pictures/how-to-draw-a-dragon-from-skyrim-step-9_1_000000153036_5.gif"))
-        size (max (.getWidth original-image) (.getHeight original-image))
-        new-image (buffered-image/create size
-                                         size)]
+    (let [original-image (ImageIO/read (File. "/Users/jukka/Pictures/how-to-draw-a-dragon-from-skyrim-step-9_1_000000153036_5.gif"))
+          size (max (.getWidth original-image) (.getHeight original-image))
+          new-image (buffered-image/create size
+                                           size)]
+      (.drawImage (buffered-image/get-graphics new-image)
+                  original-image
+                  nil
+                  0
+                  0)
+      new-image))
+
+(defn resize-max [original-image max]
+  (let [original-width (.getWidth original-image)
+        original-height (.getHeight original-image)
+        aspect-ratio (/ original-width
+                        original-height)
+        width (if (> original-width
+                     original-height)
+                max
+                (* max aspect-ratio))
+        height (if (> original-width
+                      original-height)
+                 (/ max aspect-ratio)
+                 max)
+        new-image (buffered-image/create max max)]
     (.drawImage (buffered-image/get-graphics new-image)
                 original-image
-                nil
                 0
-                0)
+                0
+                width
+                height
+                nil)
     new-image))
 
-(def target-buffered-image (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
-                                                 "00:00:01"))
+(def target-buffered-image (resize-max (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
+                                                             "00:00:01")
+                                       1000))
 
 #_(def target-buffered-image #_(buffered-image/create-from-file "pumpkin.png")
     (let [font (font/create "LiberationSans-Regular.ttf" 100)
