@@ -83,9 +83,14 @@
 
      // outColor = vec4(1,0,0, abs(texture(target_texture, texture_coordinate).a - texture(source_texture, flipped_texture_coordinate).a));
 
-  vec4 difference = texture(target_texture, texture_coordinate) - texture(source_texture, flipped_texture_coordinate);
+//  vec4 difference = texture(target_texture, texture_coordinate) - texture(source_texture, flipped_texture_coordinate);
   
-  outColor = vec4(1,0,0, abs( (difference.r + difference.g + difference.b) / 3.0));
+ //  outColor = vec4(1,0,0, abs( (difference.r + difference.g + difference.b) / 3.0));
+  vec4 target_color = texture(target_texture, texture_coordinate);
+  vec4 source_color = texture(source_texture, flipped_texture_coordinate);
+
+  outColor = (target_color / 2.0) + (source_color / 2.0);
+
   }
   ")
 
@@ -178,9 +183,9 @@
                 nil)
     new-image))
 
-(def target-buffered-image (resize-max (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
-                                                             "00:00:01")
-                                       1000))
+(defonce target-buffered-image (resize-max (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
+                                                                 "00:00:01")
+                                           700))
 
 #_(def target-buffered-image #_(buffered-image/create-from-file "pumpkin.png")
     (let [font (font/create "LiberationSans-Regular.ttf" 100)
@@ -358,27 +363,39 @@
     (swap! event-state-atom update :events conj paint-event))
   event)
 
+(def space 32)
+(def d-key-code 68)
+
+(defn pressed? [event key-code]
+  (and (= key-code (:key-code event))
+       (= :key-pressed (:type event))
+       (not (:is-auto-repeat event))))
+
+(defn released? [event key-code]
+  (and (= key-code (:key-code event))
+       (= :key-released (:type event))
+       (not (:is-auto-repeat event))))
+
 
 (handler/def-handler-creator create-keyboard-event-handler [event-state-atom] [event]
-
-  (when (and (= 32 (:key-code event))
-             (= :key-pressed (:type event))
-             (not (:is-auto-repeat event)))
-    (println "press")
+  (when (pressed? event space)
     (swap! event-state-atom assoc :paint-color [1 1 1 1]))
 
-  (when (and (= 32 (:key-code event))
-             (= :key-released (:type event))
-             (not (:is-auto-repeat event)))
-    (println "release")
-    (swap! event-state-atom assoc :paint-color [0 0 0 1])))
+  (when (released? event space)
+    (swap! event-state-atom assoc :paint-color [0 0 0 1]))
+
+  (when (pressed? event d-key-code)
+    (swap! event-state-atom assoc :show-diff true))
+
+  (when (released? event d-key-code)
+    (swap! event-state-atom assoc :show-diff false)))
 
 (defn with-borders [child]
   (layouts/box 10 (visuals/rectangle [0 0 0 255] 20 20)
                child))
 
 (defn create-scene-graph [width height]
-  (let [target-scale 0.6
+  (let [target-scale 1.0
         target-width (.getWidth target-buffered-image)
         target-height (.getHeight target-buffered-image) 
         canvas-width (int (* target-scale (max target-width target-height))) 
@@ -396,25 +413,24 @@
                            :width width
                            :height height)
                     (layouts/horizontally-with-margin 10
-                                                      (layouts/vertically-with-margin 10
-                                                                                      (with-borders
-                                                                                        (assoc (visuals/image target-buffered-image)
-                                                                                               :width (int (* target-scale target-width))
-                                                                                               :height (int (* target-scale target-height))))
-                                                                                      (with-borders
-                                                                                        (assoc (diff-view target-buffered-image
-                                                                                                          canvas-state-id)
-                                                                                               :width canvas-width
-                                                                                               :height canvas-height )))
-                                                      
                                                       (with-borders
-                                                        {:x 200
-                                                         :y 0
-                                                         :width canvas-width
-                                                         :height canvas-width
-                                                         :id :canvas
-                                                         :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom)
-                                                         :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)}))]}
+                                                        (assoc (visuals/image target-buffered-image)
+                                                               :width (int (* target-scale target-width))
+                                                               :height (int (* target-scale target-height))))
+                                                      (if (:show-diff @event-state-atom)
+                                                        (with-borders
+                                                          (assoc (diff-view target-buffered-image
+                                                                            canvas-state-id)
+                                                                 :width canvas-width
+                                                                 :height canvas-height ))
+                                                        (with-borders
+                                                          {:x 200
+                                                           :y 0
+                                                           :width canvas-width
+                                                           :height canvas-width
+                                                           :id :canvas
+                                                           :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom)
+                                                           :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)})))]}
         (application/do-layout width height))))
 
 (defn start []
