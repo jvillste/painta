@@ -16,6 +16,7 @@
              [animation :as animation]
              [stateful :as stateful])
             (flow-gl.opengl.jogl [opengl :as opengl]
+                                 [window :as window]
                                  [quad :as quad]
                                  [texture :as texture]
                                  [render-target :as render-target])
@@ -78,6 +79,10 @@
   uniform float target_scale;
   uniform float target_x;
   uniform float target_y;
+  uniform float target_width;
+  uniform float target_height;
+  uniform float diff_width;
+  uniform float diff_height;
 
   in vec2 texture_coordinate;
 
@@ -92,12 +97,14 @@
   //  vec4 difference = texture(target_texture, texture_coordinate) - texture(source_texture, flipped_texture_coordinate);
   
   //  outColor = vec4(1,0,0, abs( (difference.r + difference.g + difference.b) / 3.0));
-  vec2 target_coordinates = vec2(target_scale * texture_coordinate.x   - target_x, target_scale * texture_coordinate.y  - target_y);
+  vec2 target_coordinates = vec2((texture_coordinate.x * diff_width - target_x) / target_width / target_scale ,
+                                 (texture_coordinate.y * diff_height - target_y) / target_height / target_scale);
+
   vec4 target_color = vec4(1,1,1,1);
   if(target_coordinates.x >= 0.0  && target_coordinates.x <= 1.0 && target_coordinates.y >= 0.0  && target_coordinates.y <= 1.0){
     target_color = texture(target_texture, target_coordinates);
   }
-//   vec4 target_color = texture(target_texture, texture_coordinate);
+  // target_color = texture(target_texture, texture_coordinate);
   vec4 source_color = texture(source_texture, flipped_texture_coordinate);
 
   outColor = (target_color / 2.0) + (source_color / 2.0);
@@ -137,6 +144,7 @@
                    canvas-state-atom (atom-registry/get! canvas-state-id)]
                (render-target-renderer/render render-target-renderer-atom gl scene-graph
                                               (fn []
+                                                (prn (.getWidth target-buffered-image))
                                                 (opengl/clear gl 1 1 1 1)
                                                 (when canvas-state-atom
                                                   (quad/draw gl
@@ -147,7 +155,12 @@
                                                               "source_texture" (:texture (:target @canvas-state-atom))]
                                                              [:1f "target_scale" target-scale
                                                               :1f "target_x" target-x
-                                                              :1f "target_y" target-y]
+                                                              :1f "target_y" target-y
+                                                              :1f "target_width" (.getWidth target-buffered-image)
+                                                              :1f "target_height" (.getHeight target-buffered-image)
+                                                              :1f "diff_width" diff-width
+                                                              :1f "diff_height" diff-height]
+                                                             
                                                              (cache/call-with-key! quad/create-program
                                                                                    diff-fragment-shader-source
                                                                                    diff-fragment-shader-source
@@ -534,10 +547,8 @@
                                                           (diff-view target-buffered-image
                                                                      canvas-state-id
                                                                      (:target-scale event-state)
-                                                                     (/ (:target-x event-state)
-                                                                            target-width)
-                                                                     (/ (:target-y event-state)
-                                                                            target-height)
+                                                                     (:target-x event-state)
+                                                                     (:target-y event-state)
                                                                      canvas-width
                                                                      canvas-height)))
                                                     (with-borders
@@ -552,5 +563,7 @@
 
 (defn start []
   (.start (Thread. (fn []
-                     (application/start-window #'create-scene-graph)))))
+                     (application/start-window  #'create-scene-graph
+                                                :window (window/create 400 1000
+                                                                       :close-automatically true) )))))
 
