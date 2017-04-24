@@ -98,7 +98,7 @@
   
   //  outColor = vec4(1,0,0, abs( (difference.r + difference.g + difference.b) / 3.0));
   vec2 target_coordinates = vec2((texture_coordinate.x * diff_width - target_x) / target_width / target_scale ,
-                                 (texture_coordinate.y * diff_height - target_y) / target_height / target_scale);
+                                  (texture_coordinate.y * diff_height - target_y) / target_height / target_scale);
 
   vec4 target_color = vec4(1,1,1,1);
   if(target_coordinates.x >= 0.0  && target_coordinates.x <= 1.0 && target_coordinates.y >= 0.0  && target_coordinates.y <= 1.0){
@@ -110,6 +110,39 @@
   outColor = (target_color / 2.0) + (source_color / 2.0);
   
 
+  }
+  ")
+
+(def grid-fragment-shader-source "
+  #version 140
+
+  uniform float x1;
+  uniform float dx;
+  uniform float y1;
+  uniform float dy;
+  uniform float line_width;
+  uniform int highlight_x;
+  uniform int highlight_y;
+
+  in vec2 texture_coordinate;
+
+  out vec4 outColor;
+
+  void main() {
+  float half_line_width = line_width / 2.0;
+  float modulus_x = mod(texture_coordinate.x - x1 , dx);
+  float modulus_y = mod(texture_coordinate.y - y1 , dy);
+    if(   (modulus_x >= 0 && modulus_x <= half_line_width) || (dx - modulus_x >= 0 && dx - modulus_x <= half_line_width)
+       || (modulus_y >= 0 && modulus_y <= half_line_width) || (dy - modulus_y >= 0 && dy - modulus_y <= half_line_width)){
+      outColor = vec4(0,0,0,0.8);
+    }else{
+      if(highlight_x == int(floor((texture_coordinate.x - modulus_x) / dx))
+      && highlight_y == int(floor((texture_coordinate.y - modulus_y) / dy))){
+        outColor = vec4(0,0,0,0);
+      } else {
+        outColor = vec4(0.5,0,0,0.4);
+      }
+    }
   }
   ")
 
@@ -171,6 +204,41 @@
                                                              diff-width
                                                              diff-height))))))})
 
+
+(defn grid-view [id x1 y1 x2 y2 highlight_x highlight_y width height]
+  {:width width
+   :height height
+   :render (fn [scene-graph gl]
+             (let [render-target-atom (atom-registry/get! [id :render-target width height] (render-target/atom-specification width height gl))]
+               (render-target/render-to @render-target-atom gl
+                                        (opengl/clear gl 1 1 1 0)
+                                        (quad/draw gl
+                                                   []
+                                                   [:1f "x1" x1
+                                                    :1f "dx" (-  x2 x1) 
+                                                    :1f "y1" y1
+                                                    :1f "dy" (-  y2 y1) 
+                                                    :1f "line_width" (/ 1.1 width)
+                                                    :1i "highlight_x" highlight_x
+                                                    :1i "highlight_y" highlight_y]
+                                                   
+                                                   (cache/call-with-key! quad/create-program
+                                                                         grid-fragment-shader-source
+                                                                         grid-fragment-shader-source
+                                                                         gl)
+                                                   0 0
+                                                   width
+                                                   height
+                                                   width
+                                                   height))
+               #_(visuals/image target-buffered-image)
+               {:x (:x scene-graph)
+                :y (:y scene-graph)
+                :width width
+                :height height
+                :texture-id (:texture @render-target-atom)
+                :texture-hash  (rand 10000) #_(hash [x1 y1 x2 y2 width height grid-fragment-shader-source])}))})
+
 #_(def target-buffered-image (buffered-image/create-from-file #_"pumpkin.png" "/Users/jukka/Pictures/how-to-draw-a-dragon-from-skyrim-step-9_1_000000153036_5.gif"))
 
 #_(def target-buffered-image
@@ -211,9 +279,9 @@
                 nil)
     new-image))
 
-(def target-buffered-image (resize-max (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
-                                                             "00:00:01")
-                                       2000))
+(defonce target-buffered-image (resize-max (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
+                                                                 "00:00:01")
+                                           2000))
 
 #_(def target-buffered-image #_(buffered-image/create-from-file "pumpkin.png")
     (let [font (font/create "LiberationSans-Regular.ttf" 100)
@@ -507,13 +575,17 @@
 (defn create-scene-graph [width height]
   (let [target-width 300 #_(.getWidth target-buffered-image)
         target-height 300 #_(.getHeight target-buffered-image) 
-        canvas-width 300
-        canvas-height 300
+        canvas-width 500
+        canvas-height 500
         event-state-atom (atom-registry/get! :state {:create (fn [] {:events (create-events-set)
                                                                      :paint-color [0 0 0 1]
                                                                      :target-x 0
                                                                      :target-y 0
-                                                                     :target-scale 0.2})})
+                                                                     :target-scale 0.2
+                                                                     :grid-x1 0.1
+                                                                     :grid-y1 0.1
+                                                                     :grid-x2 0.3
+                                                                     :grid-y2 0.3})})
         event-state @event-state-atom
         target-zoom-pane (fn [id content]
                            (cache/call! zoom-pane
@@ -537,33 +609,54 @@
                            :width width
                            :height height)
                     (layouts/vertically-with-margin 10
+                                                    
                                                     (with-borders
-                                                      (assoc (target-zoom-pane :target-zoom-pane
-                                                                               (visuals/image target-buffered-image))
+                                                      (layouts/superimpose
+                                                       (assoc (target-zoom-pane :target-zoom-pane
+                                                                                (visuals/image target-buffered-image))
 
-                                                             :mouse-event-handler (create-target-mouse-event-handler event-state-atom)))
+                                                              :mouse-event-handler (create-target-mouse-event-handler event-state-atom))
+                                                       (grid-view :target-grid
+                                                                  (:grid-x1 event-state)
+                                                                  (:grid-y1 event-state)
+                                                                  (:grid-x2 event-state)
+                                                                  (:grid-y2 event-state)
+                                                                  1
+                                                                  1
+                                                                  target-width
+                                                                  target-height)))
+                                                    #_(with-borders
+                                                        (if true #_(:show-diff @event-state-atom)
+                                                            (diff-view target-buffered-image
+                                                                       canvas-state-id
+                                                                       (:target-scale event-state)
+                                                                       (:target-x event-state)
+                                                                       (:target-y event-state)
+                                                                       canvas-width
+                                                                       canvas-height)))
                                                     (with-borders
-                                                      (if true #_(:show-diff @event-state-atom)
-                                                          (diff-view target-buffered-image
-                                                                     canvas-state-id
-                                                                     (:target-scale event-state)
-                                                                     (:target-x event-state)
-                                                                     (:target-y event-state)
-                                                                     canvas-width
-                                                                     canvas-height)))
-                                                    (with-borders
-                                                      {:x 0
-                                                       :y 0
-                                                       :width canvas-width
-                                                       :height canvas-width
-                                                       :id :canvas
-                                                       :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom)
-                                                       :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)}))]}
+                                                      (layouts/superimpose
+                                                       {:x 0
+                                                        :y 0
+                                                        :width canvas-width
+                                                        :height canvas-width
+                                                        :id :canvas
+                                                        :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom)
+                                                        :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)}
+                                                       (grid-view :target-grid
+                                                                  (:grid-x1 event-state)
+                                                                  (:grid-y1 event-state)
+                                                                  (:grid-x2 event-state)
+                                                                  (:grid-y2 event-state)
+                                                                  1
+                                                                  1
+                                                                  canvas-width
+                                                                  canvas-height))))]}
         (application/do-layout width height))))
 
 (defn start []
   (.start (Thread. (fn []
                      (application/start-window  #'create-scene-graph
-                                                :window (window/create 400 1000
+                                                :window (window/create 600 1000
                                                                        :close-automatically true) )))))
 
