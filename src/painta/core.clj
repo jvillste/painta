@@ -436,7 +436,7 @@
            :texture-id (:texture (:source  @canvas-state-atom))
            :texture-hash (hash scene-graph))))
 
-(handler/def-handler-creator create-canvas-mouse-event-handler [event-state-atom] [node event]
+(handler/def-handler-creator create-canvas-mouse-event-handler [event-state-atom width height] [node event]
   (when-let [paint-event (case (:type event)
                            :mouse-pressed {:type :start-stroke
                                            :color (:paint-color @event-state-atom)
@@ -457,6 +457,10 @@
 
                            nil)]
     (swap! event-state-atom update :events conj paint-event))
+  (when (:local-x event)
+    (swap! event-state-atom
+           set-highlight event width height))
+  
   event)
 
 (def space 32)
@@ -547,7 +551,34 @@
              (:local-y event))
          (:local-y event))})
 
-(handler/def-handler-creator create-target-mouse-event-handler [event-state-atom] [node event]
+
+(defn set-highlight [event-state event width height]
+
+  (let [cell-width (- (:grid-x2 event-state)
+                      (:grid-x1 event-state))
+        cell-height (- (:grid-y2 event-state)
+                       (:grid-y1 event-state))]
+    
+
+    (assoc event-state
+           :highlight-x (Math/floor (/ (- (/ (:local-x event)
+                                             width)
+                                          (mod (:grid-x1 event-state)
+                                               cell-width))
+                                       
+                                       cell-width))
+           :highlight-y (Math/floor (/ (- (/ (:local-y event)
+                                             height)
+                                          (mod (:grid-y1 event-state)
+                                               cell-height))
+                                       
+                                       cell-height)))))
+
+(handler/def-handler-creator create-target-mouse-event-handler
+  [event-state-atom
+   target-width
+   target-height]
+  [node event]
 
   (when (:local-x event)
     (let [movement (mouse-movement @event-state-atom event)]
@@ -565,9 +596,10 @@
                                       (update :target-scale (fnil + 0 0) (* 0.01 (- (:y movement)))))))))
 
     (swap! event-state-atom (fn [state]
-                              (assoc state
-                                     :previous-mouse-x (:local-x event)
-                                     :previous-mouse-y (:local-y event)))))
+                              (-> state
+                                  (assoc :previous-mouse-x (:local-x event)
+                                         :previous-mouse-y (:local-y event))
+                                  (set-highlight event target-width target-height)))))
   
   event)
 
@@ -585,7 +617,9 @@
                                                                      :grid-x1 0.1
                                                                      :grid-y1 0.1
                                                                      :grid-x2 0.3
-                                                                     :grid-y2 0.3})})
+                                                                     :grid-y2 0.3
+                                                                     :highlight-x 0
+                                                                     :highlight-y 0})})
         event-state @event-state-atom
         target-zoom-pane (fn [id content]
                            (cache/call! zoom-pane
@@ -598,7 +632,7 @@
                                         content))
         
         canvas-state-id [:canvas-state canvas-width canvas-height]]
-    (prn (:target-x event-state) (:target-scale event-state))
+
     (animation/swap-state! animation/set-wake-up 1000)
     (keyboard/set-focused-event-handler! (create-keyboard-event-handler event-state-atom))
     (-> {:x 10
@@ -615,41 +649,45 @@
                                                        (assoc (target-zoom-pane :target-zoom-pane
                                                                                 (visuals/image target-buffered-image))
 
-                                                              :mouse-event-handler (create-target-mouse-event-handler event-state-atom))
+                                                              :mouse-event-handler (create-target-mouse-event-handler event-state-atom
+                                                                                                                      target-width
+                                                                                                                      target-height))
                                                        (grid-view :target-grid
                                                                   (:grid-x1 event-state)
                                                                   (:grid-y1 event-state)
                                                                   (:grid-x2 event-state)
                                                                   (:grid-y2 event-state)
-                                                                  1
-                                                                  1
+                                                                  (:highlight-x event-state)
+                                                                  (:highlight-y event-state)
                                                                   target-width
                                                                   target-height)))
-                                                    #_(with-borders
-                                                        (if true #_(:show-diff @event-state-atom)
-                                                            (diff-view target-buffered-image
-                                                                       canvas-state-id
-                                                                       (:target-scale event-state)
-                                                                       (:target-x event-state)
-                                                                       (:target-y event-state)
-                                                                       canvas-width
-                                                                       canvas-height)))
                                                     (with-borders
                                                       (layouts/superimpose
-                                                       {:x 0
-                                                        :y 0
-                                                        :width canvas-width
-                                                        :height canvas-width
-                                                        :id :canvas
-                                                        :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom)
-                                                        :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)}
+                                                       (if (:show-diff @event-state-atom)
+                                                         (diff-view target-buffered-image
+                                                                    canvas-state-id
+                                                                    (:target-scale event-state)
+                                                                    (:target-x event-state)
+                                                                    (:target-y event-state)
+                                                                    canvas-width
+                                                                    canvas-height)
+                                                         {:x 0
+                                                          :y 0
+                                                          :width canvas-width
+                                                          :height canvas-width
+                                                          :id :canvas
+                                                          :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom
+                                                                                                                  canvas-width
+                                                                                                                  canvas-height)
+                                                          :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)})
+                                                       
                                                        (grid-view :target-grid
                                                                   (:grid-x1 event-state)
                                                                   (:grid-y1 event-state)
                                                                   (:grid-x2 event-state)
                                                                   (:grid-y2 event-state)
-                                                                  1
-                                                                  1
+                                                                  (:highlight-x event-state)
+                                                                  (:highlight-y event-state)
                                                                   canvas-width
                                                                   canvas-height))))]}
         (application/do-layout width height))))
