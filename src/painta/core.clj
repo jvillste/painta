@@ -97,8 +97,8 @@
   //  vec4 difference = texture(target_texture, texture_coordinate) - texture(source_texture, flipped_texture_coordinate);
   
   //  outColor = vec4(1,0,0, abs( (difference.r + difference.g + difference.b) / 3.0));
-  vec2 target_coordinates = vec2((texture_coordinate.x * diff_width - target_x) / target_width / target_scale ,
-                                  (texture_coordinate.y * diff_height - target_y) / target_height / target_scale);
+  vec2 target_coordinates = vec2((texture_coordinate.x / target_scale  - target_x),
+                                  (texture_coordinate.y * diff_height - target_y * target_height) / target_height / target_scale);
 
   vec4 target_color = vec4(1,1,1,1);
   if(target_coordinates.x >= 0.0  && target_coordinates.x <= 1.0 && target_coordinates.y >= 0.0  && target_coordinates.y <= 1.0){
@@ -149,7 +149,7 @@
 (defn create-render-target [gl width height]
   (let [render-target (render-target/create width height gl)]
     (render-target/render-to render-target gl
-                             (opengl/clear gl 1 1 1 1))
+                             (opengl/clear gl 1 1 1 0))
     render-target))
 
 (defn canvas-state-atom-specification [gl width height]
@@ -175,6 +175,7 @@
    :render (fn [scene-graph gl]
              (let [render-target-renderer-atom (atom-registry/get! [:diff diff-width diff-height]  (render-target-renderer/atom-specification gl))
                    canvas-state-atom (atom-registry/get! canvas-state-id)]
+               (prn target-x)
                (render-target-renderer/render render-target-renderer-atom gl scene-graph
                                               (fn []
                                                 (prn (.getWidth target-buffered-image))
@@ -281,7 +282,7 @@
 
 (defonce target-buffered-image (resize-max (ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
                                                                  "00:00:01")
-                                           2000))
+                                           300))
 
 #_(def target-buffered-image #_(buffered-image/create-from-file "pumpkin.png")
     (let [font (font/create "LiberationSans-Regular.ttf" 100)
@@ -511,38 +512,45 @@
       (update :y * scale)))
 
 (defn zoom-pane [id width height scale x y child]
-  {:children [(layouts/with-preferred-size child)]
-   :id id
-   :width width
-   :height height
-   :render (fn [scene-graph gl]
-             (let [width (:width scene-graph)
-                   height (:height scene-graph)
-                   render-target-renderer-atom (atom-registry/get! [id :render-target-renderer] (render-target-renderer/atom-specification gl))
-                   render-target-atom (atom-registry/get! [id :render-target width height] (render-target/atom-specification width height gl))
-                   quad-renderer-atom (atom-registry/get! [id :quad-renderer] (quad-renderer/atom-specification gl))
-                   quads (map (fn [quad]
-                                (-> quad
-                                    (update :x + x)
-                                    (update :y + y)))
-                              (filter (partial scene-graph/in-region? x y width height)
-                                      (map (partial scale-quad scale)
-                                           (scene-graph/leaf-nodes scene-graph))))]
-               (render-target/render-to @render-target-atom gl
-                                        (let [{:keys [width height]} (opengl/size gl)]
-                                          (opengl/clear gl 1 1 1 1)
-                                          (swap! quad-renderer-atom
-                                                 quad-renderer/draw
-                                                 quads 
-                                                 width
-                                                 height
-                                                 gl)))
-               {:x (:x scene-graph)
-                :y (:y scene-graph)
-                :width width
-                :height height
-                :texture-id (:texture @render-target-atom)
-                :texture-hash (hash quads)}))})
+  (let [content-width 1000
+        pixel-size (* (/ width
+                          content-width)
+                       scale)
+        x-in-pixels (* x width)
+        y-in-pixels (* y width)]
+    {:children [(layouts/with-preferred-size child)]
+     :id id
+     :width width
+     :height height
+     :render (fn [scene-graph gl]
+               (let [width (:width scene-graph)
+                     height (:height scene-graph)
+                     render-target-renderer-atom (atom-registry/get! [id :render-target-renderer] (render-target-renderer/atom-specification gl))
+                     render-target-atom (atom-registry/get! [id :render-target width height] (render-target/atom-specification width height gl))
+                     quad-renderer-atom (atom-registry/get! [id :quad-renderer] (quad-renderer/atom-specification gl))
+                     quads (map (fn [quad]
+                                  (-> quad
+                                      (update :x + x-in-pixels)
+                                      (update :y + y-in-pixels)))
+                                (filter (partial scene-graph/in-region? x-in-pixels y-in-pixels width height)
+                                        (map (partial scale-quad pixel-size)
+                                             (scene-graph/leaf-nodes scene-graph))))]
+                 (render-target/render-to @render-target-atom gl
+                                          (let [{:keys [width height]} (opengl/size gl)]
+                                            (opengl/clear gl 1 1 1 1)
+                                            (swap! quad-renderer-atom
+                                                   quad-renderer/draw
+                                                   quads 
+                                                   width
+                                                   height
+                                                   gl)))
+                 {:x (:x scene-graph)
+                  :y (:y scene-graph)
+                  :width width
+                  :height height
+                  :texture-id (:texture @render-target-atom)
+                  :texture-hash (hash quads)}))}))
+
 (defn mouse-movement [event-state event]
   {:x (- (or (:previous-mouse-x event-state)
              (:local-x event))
@@ -586,8 +594,10 @@
                  (= :mouse-dragged (:type event)))
         (swap! event-state-atom (fn [state]
                                   (-> state
-                                      (update :target-x (fnil + 0 0) (- (:x movement)))
-                                      (update :target-y (fnil + 0 0) (- (:y movement)))))))
+                                      (update :target-x (fnil + 0.0 0.0) (- (/ (:x movement)
+                                                                               target-width)))
+                                      (update :target-y (fnil + 0.0 0.0) (- (/ (:y movement)
+                                                                               target-height)))))))
 
       (when (and (:scale @event-state-atom)
                  (= :mouse-dragged (:type event)))
@@ -611,9 +621,9 @@
         canvas-height 500
         event-state-atom (atom-registry/get! :state {:create (fn [] {:events (create-events-set)
                                                                      :paint-color [0 0 0 1]
-                                                                     :target-x 0
-                                                                     :target-y 0
-                                                                     :target-scale 0.2
+                                                                     :target-x 0.0
+                                                                     :target-y 0.0
+                                                                     :target-scale 1.0
                                                                      :grid-x1 0.1
                                                                      :grid-y1 0.1
                                                                      :grid-x2 0.3
@@ -643,11 +653,17 @@
                            :width width
                            :height height)
                     (layouts/vertically-with-margin 10
-                                                    
                                                     (with-borders
                                                       (layouts/superimpose
-                                                       (assoc (target-zoom-pane :target-zoom-pane
-                                                                                (visuals/image target-buffered-image))
+                                                       (assoc (cache/call! zoom-pane
+                                                                           :target-zoom-pane
+                                                                           target-width
+                                                                           target-height
+                                                                           (:target-scale event-state)
+                                                                           (:target-x event-state)
+                                                                           (:target-y event-state)
+                                                                           (visuals/image target-buffered-image))
+
 
                                                               :mouse-event-handler (create-target-mouse-event-handler event-state-atom
                                                                                                                       target-width
@@ -663,23 +679,38 @@
                                                                   target-height)))
                                                     (with-borders
                                                       (layouts/superimpose
+                                                       (assoc (visuals/rectangle [255 255 255 255]
+                                                                                 0 0)
+                                                              :width canvas-width
+                                                              :height canvas-height)
+
                                                        (if (:show-diff @event-state-atom)
-                                                         (diff-view target-buffered-image
-                                                                    canvas-state-id
-                                                                    (:target-scale event-state)
-                                                                    (:target-x event-state)
-                                                                    (:target-y event-state)
-                                                                    canvas-width
-                                                                    canvas-height)
-                                                         {:x 0
-                                                          :y 0
-                                                          :width canvas-width
-                                                          :height canvas-width
-                                                          :id :canvas
-                                                          :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom
-                                                                                                                  canvas-width
-                                                                                                                  canvas-height)
-                                                          :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)})
+                                                           (cache/call! zoom-pane
+                                                                        :diff-zoom-pane
+                                                                        #_target-width canvas-width
+                                                                        canvas-height
+                                                                        (:target-scale event-state)
+                                                                        (:target-x event-state)
+                                                                        (:target-y event-state)
+                                                                        (visuals/image target-buffered-image))
+                                                           nil
+                                                           
+                                                           #_(diff-view target-buffered-image
+                                                                        canvas-state-id
+                                                                        (:target-scale event-state)
+                                                                        (:target-x event-state)
+                                                                        (:target-y event-state)
+                                                                        canvas-width
+                                                                        canvas-height))
+                                                       {:x 0
+                                                        :y 0
+                                                        :width canvas-width
+                                                        :height canvas-width
+                                                        :id :canvas
+                                                        :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom
+                                                                                                                canvas-width
+                                                                                                                canvas-height)
+                                                        :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)}
                                                        
                                                        (grid-view :target-grid
                                                                   (:grid-x1 event-state)
