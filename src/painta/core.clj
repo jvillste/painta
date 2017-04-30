@@ -62,8 +62,8 @@
      vec2 flipped_texture_coordinate = vec2(texture_coordinate.x, 1.0 - texture_coordinate.y);
      vec4 texture_color = texture(texture, flipped_texture_coordinate);
   
-
-     outColor = vec4((texture_color * distance * texture_color.a).rgb + (paint_color * (1.0 - distance) * (1.0 - texture_color.a)), max((1.0 - distance), texture_color.a));
+     outColor = texture_color * distance + vec4(paint_color * (1.0 - distance), (1.0 - distance));
+     // outColor = vec4((texture_color * distance * texture_color.a).rgb + (paint_color * (1.0 - distance) * (1.0 - texture_color.a)), max((1.0 - distance), texture_color.a));
 //     outColor.a = (1.0 - distance);
 //     outColor.a = 1.0;
 
@@ -401,7 +401,8 @@
                                            :1i "number_of_points" (/ (count coordinates)
                                                                      2)
                                            :3f "paint_color" (:color (first events))
-                                           :1f "line_width" (/ 10 width)]
+                                           :1f "line_width" (/ (:line-width (first events))
+                                                               width)]
                                           
                                           program
                                           0 0
@@ -438,16 +439,48 @@
            :texture-id (:texture (:source  @canvas-state-atom))
            :texture-hash (hash scene-graph))))
 
+(defn mouse-movement [event-state event]
+  {:x (- (or (:previous-mouse-x event-state)
+             (:local-x event))
+         (:local-x event))
+   :y (- (or (:previous-mouse-y event-state)
+             (:local-y event))
+         (:local-y event))})
+
+(defn set-highlight [event-state event width height]
+
+  (let [cell-width (- (:grid-x2 event-state)
+                      (:grid-x1 event-state))
+        cell-height (- (:grid-y2 event-state)
+                       (:grid-y1 event-state))]
+    
+
+    (assoc event-state
+           :highlight-x (Math/floor (/ (- (/ (:local-x event)
+                                             width)
+                                          (mod (:grid-x1 event-state)
+                                               cell-width))
+                                       
+                                       cell-width))
+           :highlight-y (Math/floor (/ (- (/ (:local-y event)
+                                             height)
+                                          (mod (:grid-y1 event-state)
+                                               cell-height))
+                                       
+                                       cell-height)))))
+
 (handler/def-handler-creator create-canvas-mouse-event-handler [event-state-atom width height] [node event]
   (when-let [paint-event (case (:type event)
                            :mouse-pressed {:type :start-stroke
                                            :color (:paint-color @event-state-atom)
+                                           :line-width (:line-width @event-state-atom)
                                            :x (:local-x event)
                                            :y (:local-y event)
                                            :time (:time event)}
 
                            :mouse-dragged {:type :draw-stroke
                                            :color (:paint-color @event-state-atom)
+                                           :line-width (:line-width @event-state-atom)
                                            :x (:local-x event)
                                            :y (:local-y event)
                                            :time (:time event)}
@@ -498,21 +531,30 @@
       (assoc state key false)
       state)))
 
+(defn toggle-premanently-on-key [state key-code key event]
+  (if (pressed? event key-code)
+    (update state key not)
+    state))
+
 
 (handler/def-handler-creator create-keyboard-event-handler [event-state-atom] [event]
   (when (pressed? event space)
-    (swap! event-state-atom assoc :paint-color [1 1 1]))
+    (swap! event-state-atom assoc
+           :paint-color [1 1 1]
+           :line-width 10))
 
   (when (released? event space)
-    (swap! event-state-atom assoc :paint-color [0 0 0]))
+    (swap! event-state-atom assoc
+           :paint-color [0 0 0]
+           :line-width 1))
 
   (swap! event-state-atom
          (fn [state]
            (-> state
-               (toggle-on-key KeyEvent/VK_D :show-diff event)
+               (toggle-premanently-on-key KeyEvent/VK_D :show-diff event)
                (toggle-on-key KeyEvent/VK_M :move event)
                (toggle-on-key KeyEvent/VK_S :scale event)
-               (toggle-on-key KeyEvent/VK_G :show-grid event)))))
+               (toggle-premanently-on-key KeyEvent/VK_G :show-grid event)))))
 
 (defn with-borders [child]
   (layouts/box 10 (visuals/rectangle [0 0 0 255] 20 20)
@@ -567,36 +609,10 @@
                   :texture-id (:texture @render-target-atom)
                   :texture-hash (hash quads)}))}))
 
-(defn mouse-movement [event-state event]
-  {:x (- (or (:previous-mouse-x event-state)
-             (:local-x event))
-         (:local-x event))
-   :y (- (or (:previous-mouse-y event-state)
-             (:local-y event))
-         (:local-y event))})
 
 
-(defn set-highlight [event-state event width height]
 
-  (let [cell-width (- (:grid-x2 event-state)
-                      (:grid-x1 event-state))
-        cell-height (- (:grid-y2 event-state)
-                       (:grid-y1 event-state))]
-    
 
-    (assoc event-state
-           :highlight-x (Math/floor (/ (- (/ (:local-x event)
-                                             width)
-                                          (mod (:grid-x1 event-state)
-                                               cell-width))
-                                       
-                                       cell-width))
-           :highlight-y (Math/floor (/ (- (/ (:local-y event)
-                                             height)
-                                          (mod (:grid-y1 event-state)
-                                               cell-height))
-                                       
-                                       cell-height)))))
 
 (handler/def-handler-creator create-target-mouse-event-handler
   [event-state-atom
@@ -640,6 +656,7 @@
                                                                      :paint-color [0 0 0]
                                                                      :target-x 0.0
                                                                      :target-y 0.0
+                                                                     :line-width 1
                                                                      :target-scale 1.0
                                                                      :canvas-scale 2.0
                                                                      :grid-x1 0.1
