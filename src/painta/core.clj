@@ -55,7 +55,7 @@
   void main() {
     float distance = 1;
     for (int i = 0; i < (number_of_points -1); i++){
-      distance = min(distance, distance_to_line(texture_coordinate, points[i], points[i+1], line_width) / 0.015);
+      distance = min(distance, distance_to_line(texture_coordinate, points[i], points[i+1], line_width) / 0.005);
     }
     distance = min(1,distance);
 
@@ -64,8 +64,8 @@
   
      outColor = texture_color * distance + vec4(paint_color * (1.0 - distance), (1.0 - distance));
      // outColor = vec4((texture_color * distance * texture_color.a).rgb + (paint_color * (1.0 - distance) * (1.0 - texture_color.a)), max((1.0 - distance), texture_color.a));
-//     outColor.a = (1.0 - distance);
-//     outColor.a = 1.0;
+  //     outColor.a = (1.0 - distance);
+  //     outColor.a = 1.0;
 
 
     //outColor = vec4(0,0,0, distance); //max( 0.0, 1.0 - distance));
@@ -279,7 +279,7 @@
                 nil)
     new-image))
 
-(defonce target-buffered-image (resize-max (buffered-image/create-from-file "/Users/jukka/Downloads/Screen Shot 2017-04-29 at 05.06.00.png")
+(defonce target-buffered-image (resize-max (buffered-image/create-from-file "/Users/jukka/Downloads/horse-02.jpg" #_"/Users/jukka/Downloads/Screen Shot 2017-04-29 at 05.06.00.png")
                                            #_(ffmpeg/extract-frame "/Users/jukka/Pictures/video/2016-04-15.12.58.20_eb239942895b57b8773875a12e6fbe26.mp4"
                                                                    "00:00:01")
                                            300))
@@ -497,11 +497,12 @@
     (when (and (:scale @event-state-atom)
                (= :mouse-dragged (:type event)))
       (swap! event-state-atom (fn [state]
-                                (-> state
-                                    (update :canvas-scale
-                                            (fnil + 0 0)
-                                            (* 0.01
-                                               (- (:y (mouse-movement @event-state-atom event)))))))))
+                                (let [scale-delta (* 0.01
+                                                     (- (:y (mouse-movement @event-state-atom event))))]
+                                  (-> state
+                                      (update :canvas-scale
+                                              (fnil + 0 0)
+                                              scale-delta))))))
     (swap! event-state-atom (fn [state]
                               (-> state
                                   (assoc :previous-mouse-x (:local-x event)
@@ -621,6 +622,13 @@
   [node event]
 
   (when (:local-x event)
+    (when (= :mouse-pressed (:type event))
+      (swap! event-state-atom assoc
+             :mouse-pressed-x (/ (:local-x event)
+                                 target-width)
+             :mouse-pressed-y (/ (:local-y event)
+                                 target-height)))
+    
     (let [movement (mouse-movement @event-state-atom event)]
       (when (and (:move @event-state-atom)
                  (= :mouse-dragged (:type event)))
@@ -634,8 +642,18 @@
       (when (and (:scale @event-state-atom)
                  (= :mouse-dragged (:type event)))
         (swap! event-state-atom (fn [state]
-                                  (-> state
-                                      (update :target-scale (fnil + 0 0) (* 0.01 (- (:y movement)))))))))
+                                  (let [scale-delta (* 0.01 (- (:y movement)))]
+                                    (prn (:mouse-pressed-x state))
+                                    (-> state
+                                        (update :target-scale (fnil + 0 0) scale-delta)
+                                        (update :target-x (fn [target-x]
+                                                            (- target-x
+                                                               (* (:mouse-pressed-x state)
+                                                                  scale-delta))))
+                                        (update :target-y (fn [target-y]
+                                                            (- target-y
+                                                               (* (:mouse-pressed-y state)
+                                                                  scale-delta))))))))))
 
     (swap! event-state-atom (fn [state]
                               (-> state
@@ -658,7 +676,7 @@
                                                                      :target-y 0.0
                                                                      :line-width 1
                                                                      :target-scale 1.0
-                                                                     :canvas-scale 2.0
+                                                                     :canvas-scale 1.0
                                                                      :grid-x1 0.1
                                                                      :grid-y1 0.1
                                                                      :grid-x2 0.3
