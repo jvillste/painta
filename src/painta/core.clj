@@ -476,7 +476,7 @@
                                        
                                        cell-height)))))
 
-(handler/def-handler-creator create-canvas-mouse-event-handler [event-state-atom width height] [node event]
+(defn canvas-mouse-event-handler  [event-state-atom width height node event]
   (when-let [paint-event (case (:type event)
                            :mouse-pressed {:type :start-stroke
                                            :color (:paint-color @event-state-atom)
@@ -668,11 +668,10 @@
               pixel-size]}))
 
 
-(handler/def-handler-creator create-target-mouse-event-handler
-  [event-state-atom
-   target-width
-   target-height]
-  [node event]
+(defn target-mouse-event-handler [event-state-atom
+                                  target-width
+                                  target-height
+                                  node event]
 
   (when (:local-x event)
     (when (= :mouse-pressed (:type event))
@@ -765,9 +764,10 @@
                                                                                (visuals/image (:target-buffered-image event-state)))
 
 
-                                                                  :mouse-event-handler (create-target-mouse-event-handler event-state-atom
-                                                                                                                          target-width
-                                                                                                                          target-height))
+                                                                  :mouse-event-handler [target-mouse-event-handler
+                                                                                        event-state-atom
+                                                                                        target-width
+                                                                                        target-height])
                                                            (when (:show-grid event-state)
                                                              (grid-view :target-grid
                                                                         (:grid-x1 event-state)
@@ -824,9 +824,10 @@
                                                                                   :height canvas-width
                                                                                   :id :canvas
                                                                                   :render (create-canvas-renderer (:events @event-state-atom) canvas-state-id)})
-                                                                  :mouse-event-handler (create-canvas-mouse-event-handler event-state-atom
-                                                                                                                          canvas-width
-                                                                                                                          canvas-height))
+                                                                  :mouse-event-handler [canvas-mouse-event-handler
+                                                                                        event-state-atom
+                                                                                        canvas-width
+                                                                                        canvas-height])
                                                            
                                                            
                                                            (when (:show-grid event-state)
